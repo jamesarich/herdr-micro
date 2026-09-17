@@ -14,8 +14,19 @@ if [[ "${1:-}" == "--libs" ]]; then
   LIB_SRC="${2:?--libs needs a path}"
 fi
 
+# CDC port naming and removable-media mount points are platform specific:
+# macOS mounts under /Volumes and names ports cu.usbmodem*; Linux mounts under
+# /run/media/$USER (or /media/$USER) and names ports ttyACM*.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  MEDIA_GLOBS=(/Volumes/CIRCUITPY*)
+  PORT_GLOB='/dev/cu.usbmodem*'
+else
+  MEDIA_GLOBS=("/run/media/$USER"/CIRCUITPY* "/media/$USER"/CIRCUITPY*)
+  PORT_GLOB='/dev/ttyACM*'
+fi
+
 # Exactly one CIRCUITPY volume (ticket-05 rule: reject zero or multiple).
-mapfile -t vols < <(ls -d /Volumes/CIRCUITPY* 2>/dev/null || true)
+mapfile -t vols < <(ls -d "${MEDIA_GLOBS[@]}" 2>/dev/null || true)
 if [[ ${#vols[@]} -eq 0 ]]; then
   echo "error: no CIRCUITPY volume mounted" >&2
   exit 1
@@ -65,13 +76,13 @@ echo "verify OK: files on device"
 echo
 echo ">>> Press the Deck's reset button now (boot.py needs it). Waiting for two ports…"
 for _ in $(seq 60); do
-  n=$(ls /dev/cu.usbmodem* 2>/dev/null | wc -l | tr -d ' ')
+  n=$(ls $PORT_GLOB 2>/dev/null | wc -l | tr -d ' ')
   if [[ "$n" -ge 2 ]]; then
     echo "verify OK: $n ports:"
-    ls /dev/cu.usbmodem*
+    ls $PORT_GLOB
     exit 0
   fi
   sleep 1
 done
-echo "verify FAIL: two /dev/cu.usbmodem* ports did not appear within 60s" >&2
+echo "verify FAIL: two $PORT_GLOB ports did not appear within 60s" >&2
 exit 1

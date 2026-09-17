@@ -7,6 +7,13 @@ import { isRecord, retryForever } from "./herdr.ts";
 const MAX_FRAME = 1024;
 const POLL_MS = 20;
 
+// Platform differences in CDC serial handling: macOS ships BSD stty (-f) and
+// names CDC ports cu.usbmodem*; Linux ships GNU stty (-F) and names them
+// ttyACM*. Everything else in this file is portable.
+const IS_DARWIN = process.platform === "darwin";
+const STTY_FLAG = IS_DARWIN ? "-f" : "-F";
+const CDC_PORT_PREFIX = IS_DARWIN ? "cu.usbmodem" : "ttyACM";
+
 export type DeckMessage =
   | { readonly t: "hello"; readonly fw: string }
   | { readonly t: "key"; readonly k: number; readonly down: boolean }
@@ -129,7 +136,7 @@ interface OpenDeck {
 }
 
 const openPort = (path: string): number => {
-  const stty = Bun.spawnSync(["/bin/stty", "-f", path, "raw", "-echo"]);
+  const stty = Bun.spawnSync(["/bin/stty", STTY_FLAG, path, "raw", "-echo"]);
   if (stty.exitCode !== 0) {
     throw serialFailure(`Cannot configure ${path}`, stty.stderr.toString().trim());
   }
@@ -190,7 +197,7 @@ const probe = async (path: string, signal: AbortSignal): Promise<OpenDeck | unde
 const discover = Effect.tryPromise({
   try: async (signal) => {
     const candidates = readdirSync("/dev")
-      .filter((name) => name.startsWith("cu.usbmodem"))
+      .filter((name) => name.startsWith(CDC_PORT_PREFIX))
       .map((name) => `/dev/${name}`);
     for (const path of candidates) {
       signal.throwIfAborted();

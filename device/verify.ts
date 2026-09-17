@@ -15,7 +15,11 @@ const check = (ok: boolean, name: string) => {
 
 const buf = Buffer.alloc(4096);
 const openPort = (path: string): number | null => {
-  if (Bun.spawnSync(["stty", "-f", path, "raw", "-echo"]).exitCode !== 0) return null;
+  if (
+    Bun.spawnSync(["stty", process.platform === "darwin" ? "-f" : "-F", path, "raw", "-echo"])
+      .exitCode !== 0
+  )
+    return null;
   try {
     return openSync(path, constants.O_RDWR | constants.O_NOCTTY | constants.O_NONBLOCK);
   } catch {
@@ -72,7 +76,9 @@ const waitFor = async (fd: number, pred: (m: any) => boolean, ms: number): Promi
 };
 
 const findDataPort = async (): Promise<[string, number]> => {
-  for (const name of readdirSync("/dev").filter((n) => n.startsWith("cu.usbmodem"))) {
+  for (const name of readdirSync("/dev").filter((n) =>
+    n.startsWith(process.platform === "darwin" ? "cu.usbmodem" : "ttyACM"),
+  )) {
     const path = `/dev/${name}`;
     const fd = openPort(path);
     if (fd === null) continue;
