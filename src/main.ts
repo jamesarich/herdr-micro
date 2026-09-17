@@ -26,6 +26,7 @@ import {
   watchFleet,
   type FleetSnapshot,
 } from "./herdr.ts";
+import { discoverMachines, mergeMachineTargets } from "./machines.ts";
 import {
   initialScreensaverState,
   reconcileScreensaver,
@@ -538,7 +539,17 @@ const command = Command.make("herdr-micro").pipe(
         const loaded = yield* loadConfig(config);
         const herdr = yield* herdrVersion;
         yield* Effect.sync(() => console.error(`herdr-micro: ${herdr}`));
-        yield* hostProgram(loaded);
+        // Herdr already knows which machines the user has saved and enabled;
+        // fold them in rather than making them configure Targets twice.
+        const machines = yield* discoverMachines;
+        const withMachines = mergeMachineTargets(loaded, machines);
+        const added = Object.keys(withMachines.targets).filter((n) => !(n in loaded.targets));
+        if (added.length > 0) {
+          yield* Effect.sync(() =>
+            console.error(`Herdr machines added as Targets: ${added.join(", ")}`),
+          );
+        }
+        yield* hostProgram(withMachines);
       }),
     ),
   ),
