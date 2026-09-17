@@ -9,6 +9,10 @@ export interface Agent {
   readonly tabId: string;
   /** Which machine's Herdr server this agent lives on. */
   readonly machine: string;
+  /** Where the agent is working, for showing the project rather than just a name. */
+  readonly cwd: string | undefined;
+  /** The terminal title Herdr reports, when it carries more than the agent name. */
+  readonly title: string | undefined;
 }
 
 /**

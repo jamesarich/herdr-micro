@@ -9,6 +9,8 @@ const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   workspaceId: "workspace",
   tabId: `tab-${index}`,
   machine: "local",
+  cwd: undefined,
+  title: undefined,
 });
 
 describe("projectFleet", () => {

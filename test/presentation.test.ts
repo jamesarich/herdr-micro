@@ -14,6 +14,8 @@ const agent = (paneId: string, state: Agent["state"]): Agent => ({
   workspaceId: "workspace",
   tabId: "tab",
   machine: "local",
+  cwd: undefined,
+  title: undefined,
 });
 
 describe("syncStateSince", () => {

@@ -49,6 +49,8 @@ export interface PiStatus {
 }
 
 export interface RenderOptions {
+  /** Machine of the selected pane; disambiguates colliding pane IDs. */
+  readonly selectedMachine?: string;
   readonly selectedStateSince?: number;
   readonly detail?: PiStatus;
   readonly now?: number;
@@ -102,6 +104,12 @@ const detailLine = (detail: PiStatus | undefined): string => {
   return line(`${model.slice(0, Math.max(0, OLED_WIDTH - suffix.length))}${suffix}`);
 };
 
+/** Last path segment of a working directory: the bit that names the project. */
+const projectName = (cwd: string): string => {
+  const trimmed = cwd.replace(/\/+$/, "");
+  return trimmed.slice(trimmed.lastIndexOf("/") + 1) || trimmed;
+};
+
 export function buildRender(
   fleet: ReadonlyArray<Agent>,
   pageIndex: number,
@@ -113,7 +121,13 @@ export function buildRender(
   options: RenderOptions = {},
 ): RenderSnapshot {
   const page = projectFleet(fleet, pageIndex);
-  const selectedFleetIndex = fleet.findIndex(({ paneId }) => paneId === selectedPaneId);
+  // Pane IDs are unique only within one machine, so the selected machine has to
+  // take part in the match whenever it is known.
+  const selectedFleetIndex = fleet.findIndex(
+    ({ paneId, machine }) =>
+      paneId === selectedPaneId &&
+      (options.selectedMachine === undefined || machine === options.selectedMachine),
+  );
   const selected = selectedFleetIndex < 0 ? undefined : fleet[selectedFleetIndex];
   const normalLed: ReadonlyArray<DeviceLed> = [
     ...Array.from({ length: PAGE_SIZE }, (_, index) => {
@@ -143,13 +157,20 @@ export function buildRender(
       ? `target: ${targetLabel}`
       : encoder.mode === "tabs"
         ? `${targetLabel} tabs ${encoder.tab ? `${encoder.tab.index + 1}/${encoder.tab.count} ${encoder.tab.label}` : ""}`
-        : [targetLabel, workspaceLabel].filter(Boolean).join(" ");
+        : [targetLabel, workspaceLabel ?? (selected?.cwd ? projectName(selected.cwd) : undefined)]
+            .filter(Boolean)
+            .join(" ");
   const duration =
     selected && options.selectedStateSince !== undefined
       ? formatDuration((options.now ?? Date.now()) - options.selectedStateSince)
       : undefined;
+  // On a 21 character display the machine only earns its space when the agent
+  // is somewhere other than the active Target, which is exactly when its name
+  // alone is ambiguous.
+  const machineToken =
+    selected && selected.machine !== options.targetName ? `${selected.machine}/` : "";
   const selectedLine = selected
-    ? `> ${selected.name}  ${selected.state}${duration === undefined ? "" : ` ${duration}`}`
+    ? `> ${machineToken}${selected.name}  ${selected.state}${duration === undefined ? "" : ` ${duration}`}`
     : "no agent selected";
   const boxes = fleet.slice(0, HEADER_CAPACITY).map(({ state }) => HEADER_STATES[state]);
   const snapshot: RenderSnapshot = {

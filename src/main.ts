@@ -33,7 +33,7 @@ import {
   syncStateSince,
   type AgentStateSince,
 } from "./presentation.ts";
-import { mergeFleets, type Agent } from "./projection.ts";
+import { agentKey, mergeFleets, type Agent } from "./projection.ts";
 import {
   buildRender,
   LatestRenderQueue,
@@ -117,12 +117,6 @@ const hostProgram = (config: Config) =>
         const target = resolveTarget(config, name);
         return "ssh" in target.config ? tunnelPaths(runtimeDirectory, name).socket : target.socket;
       };
-      // Agent commands must reach the server that agent lives on, which is not
-      // necessarily the active Target now that the Fleet spans machines.
-      const socketForPane = (paneId: string): string => {
-        const agent = state.fleet.find((candidate) => candidate.paneId === paneId);
-        return agent ? socketForMachine(agent.machine) : activeSocket();
-      };
       const enqueueRender = (targetFlash?: string) => {
         if (!state.active?.live) return;
         const currentWorkspace = state.workspaces.find(
@@ -156,9 +150,15 @@ const hostProgram = (config: Config) =>
             layerHeld,
             config,
             {
-              selectedStateSince: selectedPaneId
-                ? state.stateSince.get(selectedPaneId)?.since
-                : undefined,
+              selectedMachine: state.controls.selectedMachine,
+              // stateSince is keyed by machine + pane, so the selected machine
+              // has to take part in the lookup.
+              selectedStateSince:
+                selectedPaneId && state.controls.selectedMachine
+                  ? state.stateSince.get(
+                      agentKey({ machine: state.controls.selectedMachine, paneId: selectedPaneId }),
+                    )?.since
+                  : undefined,
               detail:
                 selectedDetail && selectedDetail.paneId === selectedPaneId
                   ? selectedDetail.value
@@ -204,9 +204,12 @@ const hostProgram = (config: Config) =>
       const startDetailPolling = () => {
         stopDetailPolling();
         const paneId = state.controls.selectedPaneId;
-        if (!paneId || !state.active?.live) return;
+        const machine = state.controls.selectedMachine;
+        if (!paneId || !machine || !state.active?.live) return;
         let failureLogged = false;
-        const poll = readAgentVisible(activeSocket(), paneId).pipe(
+        // Read from the selected agent's own machine, which need not be the
+        // active Target now that the Fleet spans machines.
+        const poll = readAgentVisible(socketForMachine(machine), paneId).pipe(
           Effect.map(parsePiStatus),
           // A wedged pane must blank the detail line, not freeze the last good
           // parse; log the failure once per selected pane and keep polling.
@@ -316,7 +319,12 @@ const hostProgram = (config: Config) =>
         // move the Deck's selection.
         const focusedPaneId =
           machine === state.activeTargetName ? snapshot.focusedPaneId : undefined;
-        state.controls = reconcileControls(state.controls, merged, focusedPaneId);
+        state.controls = reconcileControls(
+          state.controls,
+          merged,
+          focusedPaneId,
+          focusedPaneId === undefined ? undefined : machine,
+        );
         syncDetailPolling(previousPaneId);
         enqueueRender();
       };
@@ -382,7 +390,7 @@ const hostProgram = (config: Config) =>
         // because those are meaningful only within one server.
         const herdrSocket =
           effect.type === "focusAgent" || effect.type === "sendKeys"
-            ? socketForPane(effect.paneId)
+            ? socketForMachine(effect.machine)
             : activeSocket();
         const operation = (() => {
           switch (effect.type) {

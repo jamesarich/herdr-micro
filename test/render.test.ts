@@ -17,6 +17,8 @@ const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   workspaceId: "workspace",
   tabId: `tab-${index}`,
   machine: "local",
+  cwd: undefined,
+  title: undefined,
 });
 
 const render = (
@@ -248,4 +250,66 @@ test("LatestRenderQueue keeps only the newest pending Render Snapshot", async ()
   await Bun.sleep(0);
 
   expect(writes.map(({ text }) => text[0])).toEqual(["first", "latest"]);
+});
+
+describe("selected agent line", () => {
+  const working = (paneId: string, machine: string, cwd: string | undefined): Agent => ({
+    ...agent(1),
+    paneId,
+    machine,
+    cwd,
+    name: "claude",
+    state: "working",
+  });
+
+  // The OLED is 21 characters wide, so every addition has to earn its space.
+  test("stays within the OLED width", () => {
+    const snapshot = render(
+      [working("p1", "local", "/repo"), working("p1", "macbook", "/mac-repo")],
+      "p1",
+      { selectedMachine: "macbook", targetName: "local" },
+    );
+    for (const text of snapshot.text) expect(text.length).toBeLessThanOrEqual(21);
+  });
+
+  test("marks the machine when the selected agent is not on the active Target", () => {
+    const snapshot = render(
+      [working("p1", "local", "/repo"), working("p1", "macbook", "/mac-repo")],
+      "p1",
+      { selectedMachine: "macbook", targetName: "local" },
+    );
+    expect(snapshot.text[1]).toContain("macbook");
+  });
+
+  test("omits the machine when the selected agent is on the active Target", () => {
+    const snapshot = render([working("p1", "local", "/repo")], "p1", {
+      selectedMachine: "local",
+      targetName: "local",
+    });
+    expect(snapshot.text[1]).toBe("> claude  working");
+  });
+
+  test("selects the agent on the selected machine when pane IDs collide", () => {
+    const snapshot = render(
+      [working("p1", "local", "/repo"), { ...working("p1", "macbook", "/x"), name: "pi" }],
+      "p1",
+      { selectedMachine: "macbook", targetName: "macbook" },
+    );
+    expect(snapshot.text[1]).toContain("pi");
+    expect(snapshot.text[1]).not.toContain("claude");
+  });
+
+  test("falls back to the working directory when Herdr reports no workspace label", () => {
+    const snapshot = buildRender(
+      [working("p1", "local", "/home/james/goon/scenegrab")],
+      0,
+      "p1",
+      undefined,
+      { mode: "workspaces" },
+      false,
+      DEFAULT_CONFIG,
+      { targetName: "local", selectedMachine: "local" },
+    );
+    expect(snapshot.text[0]).toContain("scenegrab");
+  });
 });

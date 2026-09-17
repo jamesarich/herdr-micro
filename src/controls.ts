@@ -5,6 +5,12 @@ import type { DeckMessage } from "./serial.ts";
 export interface ControlState {
   readonly pageIndex: number;
   readonly selectedPaneId: string | undefined;
+  /**
+   * Which machine the selected pane belongs to. Herdr scopes pane IDs per
+   * server, so the pane ID alone does not identify an agent once the Fleet
+   * spans machines.
+   */
+  readonly selectedMachine: string | undefined;
   readonly workspaceId: string | undefined;
   readonly encoderMode: "workspaces" | "tabs";
   readonly tabId: string | undefined;
@@ -17,8 +23,13 @@ export type ControlMessage =
   | { readonly t: "encoderTimeout" };
 
 export type ControlEffect =
-  | { readonly type: "focusAgent"; readonly paneId: string }
-  | { readonly type: "sendKeys"; readonly paneId: string; readonly keys: readonly string[] }
+  | { readonly type: "focusAgent"; readonly paneId: string; readonly machine: string }
+  | {
+      readonly type: "sendKeys";
+      readonly paneId: string;
+      readonly machine: string;
+      readonly keys: readonly string[];
+    }
   | { readonly type: "newAgent" }
   | { readonly type: "closeTab" }
   | { readonly type: "hid"; readonly key: string; readonly down: boolean }
@@ -31,6 +42,7 @@ export type ControlEffect =
 export const initialControlState: ControlState = {
   pageIndex: 0,
   selectedPaneId: undefined,
+  selectedMachine: undefined,
   workspaceId: undefined,
   encoderMode: "workspaces",
   tabId: undefined,
@@ -42,25 +54,30 @@ export function reconcileControls(
   state: ControlState,
   fleet: ReadonlyArray<Agent>,
   focusedPaneId: string | undefined,
+  focusedMachine: string | undefined,
 ): ControlState {
+  // Focus is reported by one server, so the pane must match on that machine;
+  // an identically named pane on another machine is a different agent.
+  const focused = fleet.find(
+    ({ paneId, machine }) => paneId === focusedPaneId && machine === focusedMachine,
+  );
   return {
     ...state,
     pageIndex: projectFleet(fleet, state.pageIndex).pageIndex,
-    selectedPaneId: fleet.some(({ paneId }) => paneId === focusedPaneId)
-      ? focusedPaneId
-      : undefined,
+    selectedPaneId: focused?.paneId,
+    selectedMachine: focused?.machine,
   };
 }
 
 export const isLayerHeld = (pressed: ControlState["pressedCommandActions"]): boolean =>
   Object.values(pressed).some((action) => action.type === "layer");
 
-const sendSelected = (
+export const sendSelectedKeys = (
   state: ControlState,
   keys: readonly string[],
 ): ReadonlyArray<ControlEffect> =>
-  state.selectedPaneId
-    ? [{ type: "sendKeys", paneId: state.selectedPaneId, keys }]
+  state.selectedPaneId && state.selectedMachine
+    ? [{ type: "sendKeys", paneId: state.selectedPaneId, machine: state.selectedMachine, keys }]
     : // Dropped actions were invisible at the desk and got reported as "key does nothing".
       [{ type: "log", message: `${keys.join("+")} ignored: no agent selected` }];
 
@@ -83,7 +100,7 @@ export function reduceControlMessage(
       // Built-in like base rotation: layer-held rotation cycles pi's model.
       const binding = message.delta > 0 ? ["ctrl+p"] : ["shift+ctrl+p"];
       const keys = Array.from({ length: Math.abs(message.delta) }, () => binding).flat();
-      return { state, effects: sendSelected(state, keys) };
+      return { state, effects: sendSelectedKeys(state, keys) };
     }
     return {
       state,
@@ -119,7 +136,7 @@ export function reduceControlMessage(
     if (!selected) return { state, effects: [] };
     return {
       state,
-      effects: [{ type: "focusAgent", paneId: selected.paneId }],
+      effects: [{ type: "focusAgent", paneId: selected.paneId, machine: selected.machine }],
     };
   }
   if (message.k === PAGE_SIZE) {
@@ -167,7 +184,7 @@ export function reduceControlMessage(
     case "closeTab":
       return { state: nextState, effects: [{ type: "closeTab" }] };
     case "sendKeys":
-      return { state: nextState, effects: sendSelected(state, action.keys) };
+      return { state: nextState, effects: sendSelectedKeys(state, action.keys) };
   }
 }
 

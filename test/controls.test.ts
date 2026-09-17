@@ -4,6 +4,7 @@ import { DEFAULT_CONFIG, type Config } from "../src/config.ts";
 import {
   cycleNumbered,
   initialControlState,
+  sendSelectedKeys,
   reconcileControls,
   reduceControlMessage,
   shellCommand,
@@ -20,6 +21,8 @@ const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   workspaceId: "w1",
   tabId: `t${index}`,
   machine: "local",
+  cwd: undefined,
+  title: undefined,
 });
 
 type Maps = Partial<Pick<Config, "commandKeys" | "layerKeys">>;
@@ -44,9 +47,9 @@ describe("reduceControlMessage", () => {
     const fleet = Array.from({ length: 6 }, (_, index) => agent(index + 1));
     expect(press(initialControlState, 4, fleet)).toEqual({
       state: initialControlState,
-      effects: [{ type: "focusAgent", paneId: "p5" }],
+      effects: [{ type: "focusAgent", paneId: "p5", machine: "local" }],
     });
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     expect(press(selected, 5, fleet)).toEqual({
       state: { ...selected, pageIndex: 1 },
       effects: [],
@@ -54,12 +57,12 @@ describe("reduceControlMessage", () => {
   });
 
   test("maps command keys 6-11 to the default layout", () => {
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     expect(press(selected, 6, [agent(1)]).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["ctrl+c"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["ctrl+c"] },
     ]);
     expect(press(selected, 7, [agent(1)]).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["esc"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["esc"] },
     ]);
     expect(press(selected, 8, [agent(1)]).effects).toEqual([]);
     const aliasDown = press(selected, 9, [agent(1)]);
@@ -68,16 +71,16 @@ describe("reduceControlMessage", () => {
       { type: "hid", key: "RIGHT_GUI", down: false },
     ]);
     expect(press(selected, 10, [agent(1)]).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["enter"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["enter"] },
     ]);
     expect(press(selected, 11, [agent(1)]).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["alt+enter"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["alt+enter"] },
     ]);
   });
 
   test("uses layered actions only while the layer key is held", () => {
     const fleet = [agent(1)];
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     const layerDown = key(selected, 8, true, fleet);
     expect(layerDown.effects).toEqual([]);
     expect(press(layerDown.state, 6, fleet).effects).toEqual([{ type: "newAgent" }]);
@@ -85,7 +88,7 @@ describe("reduceControlMessage", () => {
     const layerUp = key(layerDown.state, 8, false, fleet);
     expect(layerUp.effects).toEqual([]);
     expect(press(layerUp.state, 6, fleet).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["ctrl+c"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["ctrl+c"] },
     ]);
   });
 
@@ -105,7 +108,7 @@ describe("reduceControlMessage", () => {
   });
 
   test("forwards a configured Send Keys sequence unchanged", () => {
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     const commandKeys = {
       ...DEFAULT_CONFIG.commandKeys,
       "3": {
@@ -115,7 +118,7 @@ describe("reduceControlMessage", () => {
       },
     };
     expect(key(selected, 8, true, [agent(1)], { commandKeys }).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["esc", "ctrl+c"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["esc", "ctrl+c"] },
     ]);
   });
 
@@ -151,13 +154,13 @@ describe("reduceControlMessage", () => {
   });
 
   test("rotates models in both directions while Layer is held, reverting on release", () => {
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     const layerDown = key(selected, 8, true, [agent(1)]).state;
     expect(reduce(layerDown, { t: "encoder", delta: 2 }).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["ctrl+p", "ctrl+p"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["ctrl+p", "ctrl+p"] },
     ]);
     expect(reduce(layerDown, { t: "encoder", delta: -1 }).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["shift+ctrl+p"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["shift+ctrl+p"] },
     ]);
     const layerUp = key(layerDown, 8, false, [agent(1)]).state;
     expect(reduce(layerUp, { t: "encoder", delta: -1 }).effects).toEqual([
@@ -218,28 +221,31 @@ describe("reduceControlMessage", () => {
 
   test("maps the remaining layered keys to vertical arrows and Thinking cycle", () => {
     const fleet = [agent(1)];
-    const selected = { ...initialControlState, selectedPaneId: "p1" };
+    const selected = { ...initialControlState, selectedPaneId: "p1", selectedMachine: "local" };
     const layerDown = key(selected, 8, true, fleet).state;
     expect(press(layerDown, 9, fleet).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["down"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["down"] },
     ]);
     expect(press(layerDown, 10, fleet).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["up"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["up"] },
     ]);
     expect(press(layerDown, 11, fleet).effects).toEqual([
-      { type: "sendKeys", paneId: "p1", keys: ["shift+tab"] },
+      { type: "sendKeys", paneId: "p1", machine: "local", keys: ["shift+tab"] },
     ]);
   });
 });
 
 test("reconcileControls derives selection from Herdr focus and clamps a removed page", () => {
   const state = { ...initialControlState, pageIndex: 1, selectedPaneId: "p6" };
-  expect(reconcileControls(state, [agent(1)], "p1")).toEqual({
+  expect(reconcileControls(state, [agent(1)], "p1", "local")).toEqual({
     ...initialControlState,
     selectedPaneId: "p1",
+    selectedMachine: "local",
   });
-  expect(reconcileControls(state, [agent(1)], "not-an-agent")).toEqual(initialControlState);
-  expect(reconcileControls(state, [agent(1)], undefined)).toEqual(initialControlState);
+  expect(reconcileControls(state, [agent(1)], "not-an-agent", "local")).toEqual(
+    initialControlState,
+  );
+  expect(reconcileControls(state, [agent(1)], undefined, "local")).toEqual(initialControlState);
 });
 
 test("cycleNumbered follows Herdr numbers with wraparound", () => {
@@ -259,4 +265,39 @@ test("shellCommand preserves configured argv boundaries", () => {
   expect(shellCommand(["pi", "--name", "two words", "it's"])).toBe(
     "pi --name 'two words' 'it'\\''s'",
   );
+});
+
+describe("machine-scoped selection", () => {
+  const on = (machine: string, paneId: string): Agent => ({
+    ...agent(1),
+    machine,
+    paneId,
+  });
+
+  test("selects the focused pane only on the machine that reported the focus", () => {
+    const fleet = [on("local", "w1:p1"), on("macbook", "w1:p1")];
+
+    const local = reconcileControls(initialControlState, fleet, "w1:p1", "local");
+    expect(local.selectedPaneId).toBe("w1:p1");
+    expect(local.selectedMachine).toBe("local");
+
+    const mac = reconcileControls(initialControlState, fleet, "w1:p1", "macbook");
+    expect(mac.selectedMachine).toBe("macbook");
+  });
+
+  test("clears the selection when the focused machine has no such pane", () => {
+    const fleet = [on("local", "w1:p1")];
+    const state = reconcileControls(initialControlState, fleet, "w1:p1", "macbook");
+    expect(state.selectedPaneId).toBeUndefined();
+    expect(state.selectedMachine).toBeUndefined();
+  });
+
+  test("sendKeys targets the selected agent's own machine", () => {
+    const fleet = [on("local", "w1:p1"), on("macbook", "w1:p1")];
+    const selected = reconcileControls(initialControlState, fleet, "w1:p1", "macbook");
+    const effects = sendSelectedKeys(selected, ["enter"]);
+    expect(effects).toEqual([
+      { type: "sendKeys", paneId: "w1:p1", machine: "macbook", keys: ["enter"] },
+    ]);
+  });
 });

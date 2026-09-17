@@ -76,6 +76,8 @@ test("maps an unrecognized agent_status to unknown and falls back to pane_id for
         name: "p1",
         state: "unknown",
         machine: "local",
+        cwd: undefined,
+        title: undefined,
       },
     ],
     focusedPaneId: undefined,
@@ -385,4 +387,53 @@ test("watchFleet reconnects and re-emits an identical snapshot", async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     rmSync(path, { force: true });
   }
+});
+
+test("surfaces the working directory and terminal title Herdr already reports", () => {
+  const snapshot = parseSnapshot(
+    {
+      result: {
+        snapshot: {
+          focused_pane_id: "p1",
+          agents: [
+            {
+              pane_id: "p1",
+              workspace_id: "w",
+              tab_id: "t",
+              agent_status: "working",
+              agent: "claude",
+              cwd: "/home/james/goon/scenegrab",
+              foreground_cwd: "/home/james/goon/scenegrab/worktrees/x",
+              terminal_title: "scenegrab - claude",
+            },
+          ],
+        },
+      },
+    },
+    "local",
+  );
+
+  // foreground_cwd is where the agent is actually working when it differs from
+  // the pane's own cwd, so it wins.
+  expect(snapshot.fleet[0]?.cwd).toBe("/home/james/goon/scenegrab/worktrees/x");
+  expect(snapshot.fleet[0]?.title).toBe("scenegrab - claude");
+});
+
+test("falls back to the pane cwd and tolerates both being absent", () => {
+  const withoutForeground = parseSnapshot(
+    {
+      result: {
+        snapshot: {
+          agents: [
+            { pane_id: "p1", workspace_id: "w", tab_id: "t", agent_status: "idle", cwd: "/repo" },
+            { pane_id: "p2", workspace_id: "w", tab_id: "t", agent_status: "idle" },
+          ],
+        },
+      },
+    },
+    "local",
+  );
+  expect(withoutForeground.fleet[0]?.cwd).toBe("/repo");
+  expect(withoutForeground.fleet[1]?.cwd).toBeUndefined();
+  expect(withoutForeground.fleet[1]?.title).toBeUndefined();
 });

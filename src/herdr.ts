@@ -68,6 +68,9 @@ const SnapshotResponse = Schema.Struct({
           display_agent: OptionalString,
           name: OptionalString,
           agent: OptionalString,
+          cwd: OptionalString,
+          foreground_cwd: OptionalString,
+          terminal_title: OptionalString,
         }),
       ),
     }),
@@ -87,6 +90,10 @@ export function parseSnapshot(input: unknown, machine: string): FleetSnapshot {
     // A status Herdr adds later renders as "unknown" instead of turning
     // the retry loop into a permanent failure.
     state: AGENT_STATES.find((state) => state === value.agent_status) ?? "unknown",
+    // foreground_cwd tracks what the agent is actually doing (it follows a cd
+    // inside the pane); cwd is where the pane started. Prefer the former.
+    cwd: value.foreground_cwd ?? value.cwd ?? undefined,
+    title: value.terminal_title ?? undefined,
   }));
   return { fleet, focusedPaneId: snapshot.focused_pane_id ?? undefined };
 }
