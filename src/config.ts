@@ -44,6 +44,13 @@ const RegularCommandAction = Schema.Union([
     color: HexColor,
   }),
   Schema.Struct({
+    // Herdr qualifies plugin actions globally as `plugin.id.action`, so one
+    // id is enough to name any action the user has installed.
+    type: Schema.Literal("pluginAction"),
+    id: Schema.NonEmptyString,
+    color: HexColor,
+  }),
+  Schema.Struct({
     type: Schema.Literal("keyAlias"),
     key: Schema.Literals(HID_KEYS),
     color: HexColor,

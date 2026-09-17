@@ -301,3 +301,43 @@ describe("machine-scoped selection", () => {
     ]);
   });
 });
+
+describe("plugin action Command Keys", () => {
+  test("invoking a plugin action Command Key asks Herdr to run that action", () => {
+    const config: Config = {
+      ...DEFAULT_CONFIG,
+      commandKeys: {
+        ...DEFAULT_CONFIG.commandKeys,
+        "1": { type: "pluginAction", id: "worktrees.create", color: "#b8bb26" },
+      },
+    };
+
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 6, down: true },
+      [agent(1)],
+      config,
+    );
+
+    expect(effects).toEqual([{ type: "invokePluginAction", id: "worktrees.create" }]);
+  });
+
+  test("a plugin action does not need a selected agent, unlike sendKeys", () => {
+    const config: Config = {
+      ...DEFAULT_CONFIG,
+      commandKeys: {
+        ...DEFAULT_CONFIG.commandKeys,
+        "1": { type: "pluginAction", id: "tests.run", color: "#b8bb26" },
+      },
+    };
+
+    const { effects } = reduceControlMessage(
+      { ...initialControlState, selectedPaneId: undefined, selectedMachine: undefined },
+      { t: "key", k: 6, down: true },
+      [],
+      config,
+    );
+
+    expect(effects).toEqual([{ type: "invokePluginAction", id: "tests.run" }]);
+  });
+});

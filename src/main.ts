@@ -408,6 +408,13 @@ const hostProgram = (config: Config) =>
               );
             case "hid":
               return deck.write({ t: "hid", key: effect.key, down: effect.down });
+            case "invokePluginAction":
+              // Herdr resolves the globally qualified action id against the
+              // plugins the user has installed, so the Deck does not need to
+              // know which plugin owns it.
+              return sendRequest(herdrSocket, "plugin.action.invoke", {
+                action_id: effect.id,
+              }).pipe(Effect.asVoid);
             case "newAgent":
               return Effect.gen(function* () {
                 const workspaces = yield* listWorkspaces(herdrSocket);

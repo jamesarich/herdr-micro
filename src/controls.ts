@@ -31,6 +31,7 @@ export type ControlEffect =
       readonly keys: readonly string[];
     }
   | { readonly type: "newAgent" }
+  | { readonly type: "invokePluginAction"; readonly id: string }
   | { readonly type: "closeTab" }
   | { readonly type: "hid"; readonly key: string; readonly down: boolean }
   | { readonly type: "selectWorkspace"; readonly delta: number }
@@ -185,6 +186,10 @@ export function reduceControlMessage(
       return { state: nextState, effects: [{ type: "closeTab" }] };
     case "sendKeys":
       return { state: nextState, effects: sendSelectedKeys(state, action.keys) };
+    case "pluginAction":
+      // A plugin action is a workflow on the server, not keystrokes for an
+      // agent, so unlike sendKeys it needs no selection to be meaningful.
+      return { state: nextState, effects: [{ type: "invokePluginAction", id: action.id }] };
   }
 }
 
