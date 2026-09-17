@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { initialControlState } from "../src/controls.ts";
 import { initialScreensaverState } from "../src/presentation.ts";
-import { resetTargetSessionState, type TargetSessionState } from "../src/target-state.ts";
+import { resetTargetViewState, type TargetSessionState } from "../src/target-state.ts";
 
 const dirtyState = (): TargetSessionState => ({
   fleet: [
@@ -32,16 +32,23 @@ const dirtyState = (): TargetSessionState => ({
   screensaverState: { fleetSignature: "same-id:working", idleSince: 1, sleeping: true },
 });
 
-test("Target switch resets all Target-scoped state in one step", () => {
+test("Target switch clears the Target-scoped view in one step", () => {
   const state = dirtyState();
-  resetTargetSessionState(state);
+  resetTargetViewState(state);
 
-  expect(state.fleet).toEqual([]);
-  expect(state.controls).toBe(initialControlState);
   expect(state.workspaces).toEqual([]);
   expect(state.tabs).toEqual([]);
   expect(state.selectedDetail).toBeUndefined();
-  expect(state.sleeping).toBe(false);
-  expect(state.stateSince.size).toBe(0);
-  expect(state.screensaverState).toBe(initialScreensaverState);
+});
+
+test("Target switch keeps Fleet state, which spans every machine", () => {
+  const state = dirtyState();
+  resetTargetViewState(state);
+
+  // Agents on the machines we did not switch away from are still running, so
+  // dropping them here would blank slots that are legitimately lit.
+  expect(state.fleet).toHaveLength(1);
+  expect(state.stateSince.size).toBe(1);
+  expect(state.screensaverState).not.toBe(initialScreensaverState);
+  expect(state.controls).not.toBe(initialControlState);
 });

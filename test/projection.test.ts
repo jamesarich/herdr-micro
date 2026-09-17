@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { projectFleet, type Agent } from "../src/projection.ts";
+import { mergeFleets, projectFleet, type Agent } from "../src/projection.ts";
 
 const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   paneId: `pane-${index}`,
@@ -65,5 +65,34 @@ describe("projectFleet", () => {
   test("clamps the current page after the last page disappears", () => {
     const fleet = Array.from({ length: 5 }, (_, index) => agent(index + 1));
     expect(projectFleet(fleet, 1).pageIndex).toBe(0);
+  });
+});
+
+describe("mergeFleets", () => {
+  const on = (machine: string, id: number): Agent => ({ ...agent(id), machine });
+
+  test("groups agents by machine in the given order, preserving Herdr order within each", () => {
+    const merged = mergeFleets(
+      ["local", "macbook"],
+      new Map([
+        ["macbook", [on("macbook", 1), on("macbook", 2)]],
+        ["local", [on("local", 9)]],
+      ]),
+    );
+    expect(merged.map(({ machine, paneId }) => `${machine}/${paneId}`)).toEqual([
+      "local/pane-9",
+      "macbook/pane-1",
+      "macbook/pane-2",
+    ]);
+  });
+
+  test("skips machines that have not reported a fleet yet", () => {
+    const merged = mergeFleets(["local", "macbook"], new Map([["local", [on("local", 1)]]]));
+    expect(merged).toEqual([on("local", 1)]);
+  });
+
+  test("ignores fleets from machines outside the order", () => {
+    const merged = mergeFleets(["local"], new Map([["ghost", [on("ghost", 1)]]]));
+    expect(merged).toEqual([]);
   });
 });

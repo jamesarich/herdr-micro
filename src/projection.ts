@@ -57,3 +57,17 @@ export function projectFleet(
     ),
   };
 }
+
+/**
+ * Flatten per-machine fleets into the single ordered Fleet the slots project.
+ *
+ * Machines appear in the given order (the configured Target order) and agents
+ * keep Herdr's own order within each machine, so a slot only moves when the
+ * fleet genuinely changes rather than because one machine answered first.
+ * Machines that have not reported yet are skipped rather than reserving space,
+ * so a slow or unreachable machine never blanks slots for the others.
+ */
+export const mergeFleets = (
+  order: ReadonlyArray<string>,
+  byMachine: ReadonlyMap<string, ReadonlyArray<Agent>>,
+): ReadonlyArray<Agent> => order.flatMap((machine) => byMachine.get(machine) ?? []);

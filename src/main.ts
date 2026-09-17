@@ -33,7 +33,7 @@ import {
   syncStateSince,
   type AgentStateSince,
 } from "./presentation.ts";
-import type { Agent } from "./projection.ts";
+import { mergeFleets, type Agent } from "./projection.ts";
 import {
   buildRender,
   LatestRenderQueue,
@@ -43,7 +43,7 @@ import {
 } from "./render.ts";
 import { watchDeck, type DeckMessage, type DeckWriter } from "./serial.ts";
 import { setupHost, startService, stopService, uninstallService } from "./setup.ts";
-import { resetTargetSessionState, type TargetSessionState } from "./target-state.ts";
+import { resetTargetViewState, type TargetSessionState } from "./target-state.ts";
 import {
   makeTargetRuntimeDirectory,
   resolveTarget,
@@ -75,6 +75,10 @@ interface ActiveDeck {
 // Extending TargetSessionState keeps AppState's target-scoped fields and the
 // switch-time reset in target-state.ts from drifting apart.
 interface AppState extends TargetSessionState {
+  /** Latest Fleet reported by each machine; merged into `fleet` for display. */
+  fleetByMachine: Map<string, ReadonlyArray<Agent>>;
+  /** Machines whose watch is currently failing, so they contribute no agents. */
+  erroredMachines: Set<string>;
   active: ActiveDeck | undefined;
   activeTargetName: string;
   targetSocket: string | undefined;
@@ -100,6 +104,8 @@ const hostProgram = (config: Config) =>
         active: undefined,
         stateSince: new Map<string, AgentStateSince>(),
         screensaverState: initialScreensaverState,
+        fleetByMachine: new Map<string, ReadonlyArray<Agent>>(),
+        erroredMachines: new Set<string>(),
         activeTargetName: config.defaultTarget,
         targetSocket: undefined,
         targetError: false,
@@ -107,6 +113,16 @@ const hostProgram = (config: Config) =>
       };
       // switchTarget runs before watchDeck, so the socket is set before any read.
       const activeSocket = () => state.targetSocket!;
+      const socketForMachine = (name: string): string => {
+        const target = resolveTarget(config, name);
+        return "ssh" in target.config ? tunnelPaths(runtimeDirectory, name).socket : target.socket;
+      };
+      // Agent commands must reach the server that agent lives on, which is not
+      // necessarily the active Target now that the Fleet spans machines.
+      const socketForPane = (paneId: string): string => {
+        const agent = state.fleet.find((candidate) => candidate.paneId === paneId);
+        return agent ? socketForMachine(agent.machine) : activeSocket();
+      };
       const enqueueRender = (targetFlash?: string) => {
         if (!state.active?.live) return;
         const currentWorkspace = state.workspaces.find(
@@ -279,39 +295,65 @@ const hostProgram = (config: Config) =>
         encoderModeTimer = setTimeout(leaveEncoderMode, config.encoderTimeoutSeconds * 1_000);
       };
 
-      let fleetFiber: Fiber.Fiber<unknown, unknown> | undefined;
+      let started = false;
       let switchFlashTimer: ReturnType<typeof setTimeout> | undefined;
-      const onFleetSnapshot = (snapshot: FleetSnapshot) => {
+      const onFleetSnapshot = (machine: string) => (snapshot: FleetSnapshot) => {
         if (switchFlashTimer) clearTimeout(switchFlashTimer);
         switchFlashTimer = undefined;
-        state.connecting = false;
-        state.targetError = false;
+        state.erroredMachines.delete(machine);
+        state.fleetByMachine.set(machine, snapshot.fleet);
+        // Only the active Target drives the connecting/error chrome; a
+        // secondary machine coming and going must not blank the Deck.
+        if (machine === state.activeTargetName) {
+          state.connecting = false;
+          state.targetError = false;
+        }
         const previousPaneId = state.controls.selectedPaneId;
-        state.fleet = snapshot.fleet;
-        syncFleetPresentationState(snapshot.fleet);
-        state.controls = reconcileControls(state.controls, snapshot.fleet, snapshot.focusedPaneId);
+        const merged = mergeFleets(targetNames(config), state.fleetByMachine);
+        state.fleet = merged;
+        syncFleetPresentationState(merged);
+        // Focus is per-server, so only the active machine's focused pane can
+        // move the Deck's selection.
+        const focusedPaneId =
+          machine === state.activeTargetName ? snapshot.focusedPaneId : undefined;
+        state.controls = reconcileControls(state.controls, merged, focusedPaneId);
         syncDetailPolling(previousPaneId);
         enqueueRender();
       };
-      const markTargetError = (cause: { readonly message: string }) => {
-        state.targetError = true;
-        state.connecting = true;
+      const markMachineError = (machine: string) => (cause: { readonly message: string }) => {
+        state.erroredMachines.add(machine);
+        // A machine that cannot be reached contributes no agents rather than
+        // leaving stale ones lit on the Deck.
+        state.fleetByMachine.delete(machine);
+        state.fleet = mergeFleets(targetNames(config), state.fleetByMachine);
+        if (machine === state.activeTargetName) {
+          state.targetError = true;
+          state.connecting = true;
+        }
         enqueueRender();
-        console.error(`${cause.message}; reconnecting`);
+        console.error(`[${machine}] ${cause.message}; reconnecting`);
       };
       const watchTarget = (name: string) => {
         const target = resolveTarget(config, name);
         // switchTarget already precomputed state.targetSocket to this same
         // value (tunnel paths are deterministic), so no setter here.
         const run = (socket: string) =>
-          watchFleet(socket, name, onFleetSnapshot, () => refreshWorkspaces, markTargetError);
+          watchFleet(
+            socket,
+            name,
+            onFleetSnapshot(name),
+            () => (name === state.activeTargetName ? refreshWorkspaces : Effect.void),
+            markMachineError(name),
+          );
         if (!("ssh" in target.config)) return run(target.socket);
-        return retryForever(withTargetSocket(target, runtimeDirectory, run), markTargetError);
+        return retryForever(
+          withTargetSocket(target, runtimeDirectory, run),
+          markMachineError(name),
+        );
       };
       const switchTarget = (name: string): Effect.Effect<void> =>
         Effect.gen(function* () {
-          if (fleetFiber && name === state.activeTargetName) return;
-          if (fleetFiber) yield* Fiber.interrupt(fleetFiber);
+          if (started && name === state.activeTargetName) return;
           if (detailFiber) yield* Fiber.interrupt(detailFiber);
           detailFiber = undefined;
           if (detailNudgeTimer) clearTimeout(detailNudgeTimer);
@@ -319,20 +361,29 @@ const hostProgram = (config: Config) =>
           clearEncoderModeTimer();
           clearScreensaverTimer();
           if (switchFlashTimer) clearTimeout(switchFlashTimer);
-          resetTargetSessionState(state);
+          // Only the Target-scoped view is reset. The Fleet spans every machine
+          // and each machine's watch keeps running, so clearing it here would
+          // drop agents that are still perfectly alive on the other machines.
+          resetTargetViewState(state);
           state.activeTargetName = name;
           state.targetError = false;
-          state.connecting = true;
+          state.connecting = !state.fleetByMachine.has(name);
           const target = resolveTarget(config, name);
           state.targetSocket =
             "ssh" in target.config ? tunnelPaths(runtimeDirectory, name).socket : target.socket;
+          if (started) yield* refreshWorkspaces.pipe(Effect.catch(logFailure));
           enqueueRender(targetColor(targetNames(config).indexOf(name)));
           switchFlashTimer = setTimeout(enqueueRender, 150);
-          fleetFiber = runFork(watchTarget(name));
         });
 
       const execute = (effect: ControlEffect, deck: DeckWriter): Effect.Effect<void, never> => {
-        const herdrSocket = activeSocket();
+        // Agent commands follow the agent to whichever machine it lives on;
+        // workspace, tab and new-agent commands stay on the active Target,
+        // because those are meaningful only within one server.
+        const herdrSocket =
+          effect.type === "focusAgent" || effect.type === "sendKeys"
+            ? socketForPane(effect.paneId)
+            : activeSocket();
         const operation = (() => {
           switch (effect.type) {
             case "focusAgent":
@@ -509,7 +560,15 @@ const hostProgram = (config: Config) =>
           }),
       };
 
+      // switchTarget first: it establishes the active Target's socket, which
+      // refreshWorkspaces reads as soon as the first snapshot lands. Only then
+      // start watching every configured Target, so the Fleet spans machines;
+      // switchTarget thereafter only moves which one the encoder drives.
       yield* switchTarget(config.defaultTarget);
+      for (const name of targetNames(config)) {
+        runFork(watchTarget(name));
+      }
+      started = true;
       yield* watchDeck(handlers);
     }),
   );
