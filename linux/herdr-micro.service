@@ -1,0 +1,31 @@
+[Unit]
+Description=herdr-micro Host (Adafruit MacroPad control deck for Herdr)
+Documentation=https://github.com/chenxin-yan/herdr-micro
+# The Host tolerates both the Deck and the Herdr socket being absent and
+# retries internally, so it does not need to order itself after either.
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/herdr-micro
+# systemd user units start with a minimal PATH. The Host shells out to
+# `herdr` and runs under `bun`, so both must be reachable from here; see the
+# note at the end of this file if `herdr` lives outside these directories.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/bin/bun run src/main.ts
+Restart=always
+RestartSec=3
+StandardOutput=append:%h/.config/herdr/herdr-micro.log
+StandardError=append:%h/.config/herdr/herdr-micro.log
+
+[Install]
+WantedBy=default.target
+
+# Install:
+#   cp linux/herdr-micro.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now herdr-micro
+#
+# Adjust WorkingDirectory to wherever the repo lives, and extend PATH if
+# `herdr` is installed somewhere systemd's minimal PATH will not find it
+# (Homebrew/linuxbrew being the common case).
