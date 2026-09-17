@@ -16,6 +16,7 @@ const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   state,
   workspaceId: "workspace",
   tabId: `tab-${index}`,
+  machine: "local",
 });
 
 const render = (

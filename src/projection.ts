@@ -7,7 +7,18 @@ export interface Agent {
   readonly state: AgentState;
   readonly workspaceId: string;
   readonly tabId: string;
+  /** Which machine's Herdr server this agent lives on. */
+  readonly machine: string;
 }
+
+/**
+ * Herdr scopes workspace, tab and pane IDs to a single server, so two machines
+ * may both hold `w1:p1`. Anything that keys or compares agents must therefore
+ * qualify the pane with its machine. NUL cannot appear in either part, so it is
+ * an unambiguous separator.
+ */
+export const agentKey = ({ machine, paneId }: Pick<Agent, "machine" | "paneId">): string =>
+  `${machine}\u0000${paneId}`;
 
 interface FleetProjection {
   readonly pageIndex: number;

@@ -1,4 +1,4 @@
-import type { Agent } from "./projection.ts";
+import { agentKey, type Agent } from "./projection.ts";
 
 export interface AgentStateSince {
   readonly state: Agent["state"];
@@ -10,15 +10,16 @@ export const syncStateSince = (
   fleet: ReadonlyArray<Agent>,
   now: number,
 ): void => {
-  const paneIds = new Set(fleet.map(({ paneId }) => paneId));
+  const keys = new Set(fleet.map(agentKey));
   for (const agent of fleet) {
-    const previous = stateSince.get(agent.paneId);
+    const key = agentKey(agent);
+    const previous = stateSince.get(key);
     if (!previous || previous.state !== agent.state) {
-      stateSince.set(agent.paneId, { state: agent.state, since: now });
+      stateSince.set(key, { state: agent.state, since: now });
     }
   }
-  for (const paneId of stateSince.keys()) {
-    if (!paneIds.has(paneId)) stateSince.delete(paneId);
+  for (const key of stateSince.keys()) {
+    if (!keys.has(key)) stateSince.delete(key);
   }
 };
 
@@ -41,7 +42,7 @@ export const reconcileScreensaver = (
   timeoutMs: number,
   activity = false,
 ): ScreensaverState => {
-  const fleetSignature = fleet.map(({ paneId, state }) => `${paneId}:${state}`).join("|");
+  const fleetSignature = fleet.map((agent) => `${agentKey(agent)}:${agent.state}`).join("|");
   if (fleet.some(({ state }) => state !== "idle")) {
     return { fleetSignature, idleSince: undefined, sleeping: false };
   }

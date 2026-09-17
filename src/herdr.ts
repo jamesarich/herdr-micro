@@ -74,9 +74,12 @@ const SnapshotResponse = Schema.Struct({
   }),
 });
 
-export function parseSnapshot(input: unknown): FleetSnapshot {
+export function parseSnapshot(input: unknown, machine: string): FleetSnapshot {
   const { snapshot } = decode(SnapshotResponse, "session.snapshot")(input).result;
   const fleet = snapshot.agents.map((value) => ({
+    // Herdr IDs are scoped to one server, so every agent carries the machine
+    // it came from; without it two machines' `w1:p1` are indistinguishable.
+    machine,
     paneId: value.pane_id,
     workspaceId: value.workspace_id,
     tabId: value.tab_id,
@@ -372,11 +375,12 @@ export const createAgent = (
     });
   });
 
-const requestSnapshot = (path: string): Effect.Effect<FleetSnapshot, HerdrError> =>
-  requestParsed(path, "session.snapshot", parseSnapshot);
+const requestSnapshot = (path: string, machine: string): Effect.Effect<FleetSnapshot, HerdrError> =>
+  requestParsed(path, "session.snapshot", (input) => parseSnapshot(input, machine));
 
 function refreshOnce(
   path: string,
+  machine: string,
   onSnapshot: (snapshot: FleetSnapshot) => void,
   onRefresh: () => Effect.Effect<void, HerdrError>,
 ): Effect.Effect<void, HerdrError> {
@@ -384,7 +388,7 @@ function refreshOnce(
     // Full teardown + resubscribe per event so panes created since the last
     // subscription get their own agent_status subscriptions. O(4 round-trips
     // per event) — fine at v1 fleet sizes.
-    const initial = yield* requestSnapshot(path);
+    const initial = yield* requestSnapshot(path, machine);
     yield* withSocket(path, (subscription) =>
       Effect.gen(function* () {
         const subscriptions = [
@@ -399,7 +403,7 @@ function refreshOnce(
           method: "events.subscribe",
           params: { subscriptions },
         });
-        const current = yield* requestSnapshot(path);
+        const current = yield* requestSnapshot(path, machine);
         yield* Effect.sync(() => onSnapshot(current));
         yield* onRefresh();
         // Panes created between the two snapshots have no agent_status
@@ -441,6 +445,7 @@ export const retryForever = <A, E extends { readonly message: string }, R>(
 
 export const watchFleet = (
   path: string,
+  machine: string,
   onSnapshot: (snapshot: FleetSnapshot) => void,
   onRefresh: () => Effect.Effect<void, HerdrError> = () => Effect.void,
   onError: (error: HerdrError) => void = logReconnect,
@@ -452,7 +457,7 @@ export const watchFleet = (
     previous = current;
     onSnapshot(snapshot);
   };
-  return retryForever(refreshOnce(path, emitChange, onRefresh), (error) => {
+  return retryForever(refreshOnce(path, machine, emitChange, onRefresh), (error) => {
     // Recovery can deliver a snapshot identical to the last pre-error one;
     // reset the dedupe so consumers always observe the reconnect.
     previous = "";

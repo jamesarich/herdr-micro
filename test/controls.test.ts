@@ -19,6 +19,7 @@ const agent = (index: number, state: Agent["state"] = "idle"): Agent => ({
   state,
   workspaceId: "w1",
   tabId: `t${index}`,
+  machine: "local",
 });
 
 type Maps = Partial<Pick<Config, "commandKeys" | "layerKeys">>;

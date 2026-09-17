@@ -304,7 +304,7 @@ const hostProgram = (config: Config) =>
         // switchTarget already precomputed state.targetSocket to this same
         // value (tunnel paths are deterministic), so no setter here.
         const run = (socket: string) =>
-          watchFleet(socket, onFleetSnapshot, () => refreshWorkspaces, markTargetError);
+          watchFleet(socket, name, onFleetSnapshot, () => refreshWorkspaces, markTargetError);
         if (!("ssh" in target.config)) return run(target.socket);
         return retryForever(withTargetSocket(target, runtimeDirectory, run), markTargetError);
       };

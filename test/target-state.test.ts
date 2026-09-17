@@ -5,7 +5,16 @@ import { initialScreensaverState } from "../src/presentation.ts";
 import { resetTargetSessionState, type TargetSessionState } from "../src/target-state.ts";
 
 const dirtyState = (): TargetSessionState => ({
-  fleet: [{ paneId: "same-id", workspaceId: "w", tabId: "t", name: "agent", state: "working" }],
+  fleet: [
+    {
+      paneId: "same-id",
+      workspaceId: "w",
+      tabId: "t",
+      name: "agent",
+      state: "working",
+      machine: "local",
+    },
+  ],
   controls: {
     pageIndex: 2,
     selectedPaneId: "same-id",

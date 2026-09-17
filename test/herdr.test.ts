@@ -6,6 +6,7 @@ import { createServer, Socket } from "node:net";
 import { Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 
+import type { FleetSnapshot } from "../src/herdr.ts";
 import {
   connect,
   createAgent,
@@ -19,23 +20,32 @@ import {
 } from "../src/herdr.ts";
 
 test("maps a session snapshot into the Fleet in Herdr order", () => {
-  const snapshot = parseSnapshot({
-    result: {
-      snapshot: {
-        focused_pane_id: "p1",
-        agents: [
-          {
-            pane_id: "p2",
-            workspace_id: "w",
-            tab_id: "t2",
-            display_agent: "Claude",
-            agent_status: "blocked",
-          },
-          { pane_id: "p1", workspace_id: "w", tab_id: "t1", agent: "pi", agent_status: "working" },
-        ],
+  const snapshot = parseSnapshot(
+    {
+      result: {
+        snapshot: {
+          focused_pane_id: "p1",
+          agents: [
+            {
+              pane_id: "p2",
+              workspace_id: "w",
+              tab_id: "t2",
+              display_agent: "Claude",
+              agent_status: "blocked",
+            },
+            {
+              pane_id: "p1",
+              workspace_id: "w",
+              tab_id: "t1",
+              agent: "pi",
+              agent_status: "working",
+            },
+          ],
+        },
       },
     },
-  });
+    "local",
+  );
 
   expect(snapshot.fleet.map(({ paneId, name, state }) => ({ paneId, name, state }))).toEqual([
     { paneId: "p2", name: "Claude", state: "blocked" },
@@ -45,29 +55,41 @@ test("maps a session snapshot into the Fleet in Herdr order", () => {
 });
 
 test("maps an unrecognized agent_status to unknown and falls back to pane_id for the name", () => {
-  const snapshot = parseSnapshot({
-    result: {
-      snapshot: {
-        focused_pane_id: null,
-        agents: [{ pane_id: "p1", workspace_id: "w", tab_id: "t", agent_status: "compacting" }],
+  const snapshot = parseSnapshot(
+    {
+      result: {
+        snapshot: {
+          focused_pane_id: null,
+          agents: [{ pane_id: "p1", workspace_id: "w", tab_id: "t", agent_status: "compacting" }],
+        },
       },
     },
-  });
+    "local",
+  );
 
   expect(snapshot).toEqual({
-    fleet: [{ paneId: "p1", workspaceId: "w", tabId: "t", name: "p1", state: "unknown" }],
+    fleet: [
+      {
+        paneId: "p1",
+        workspaceId: "w",
+        tabId: "t",
+        name: "p1",
+        state: "unknown",
+        machine: "local",
+      },
+    ],
     focusedPaneId: undefined,
   });
 });
 
 test("rejects malformed snapshots", () => {
-  expect(() => parseSnapshot({ result: {} })).toThrow("Invalid session.snapshot response");
+  expect(() => parseSnapshot({ result: {} }, "local")).toThrow("Invalid session.snapshot response");
   expect(() =>
-    parseSnapshot({ result: { snapshot: { agents: [{ workspace_id: "w" }] } } }),
+    parseSnapshot({ result: { snapshot: { agents: [{ workspace_id: "w" }] } } }, "local"),
   ).toThrow("Invalid session.snapshot response");
-  expect(() => parseSnapshot({ result: { snapshot: { agents: [], focused_pane_id: 1 } } })).toThrow(
-    "Invalid session.snapshot response",
-  );
+  expect(() =>
+    parseSnapshot({ result: { snapshot: { agents: [], focused_pane_id: 1 } } }, "local"),
+  ).toThrow("Invalid session.snapshot response");
 });
 
 // Drives readUntil with synthetic socket events: run the effect, let the
@@ -239,6 +261,7 @@ test("watchFleet retries when Herdr stops answering snapshots", async () => {
   const program = Effect.gen(function* () {
     yield* watchFleet(
       path,
+      "local",
       () => {},
       undefined,
       () => {
@@ -331,7 +354,8 @@ test("watchFleet reconnects and re-emits an identical snapshot", async () => {
   const fiber = Effect.runFork(
     watchFleet(
       path,
-      (snapshot) => {
+      "local",
+      (snapshot: FleetSnapshot) => {
         fleets.push(snapshot.fleet);
         if (fleets.length === 1) {
           subscriptions.forEach((socket) => socket.destroy());
