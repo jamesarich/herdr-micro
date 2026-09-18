@@ -424,8 +424,19 @@ const hostProgram = (config: Config) =>
               // Typed at whatever window has focus, which is how the Deck
               // reaches the Herdr client rather than an agent's terminal.
               return Effect.gen(function* () {
+                // A chord this build cannot spell is a configuration mistake,
+                // not a reason to lose the Deck: parseChord throwing here used
+                // to surface as a defect that tore down the session and looked
+                // to the user like the Deck rebooting.
+                const chords = [];
                 for (const spelling of effect.keys) {
-                  const chord = parseChord(spelling);
+                  try {
+                    chords.push(parseChord(spelling));
+                  } catch (cause) {
+                    console.error(`Ignoring chord ${JSON.stringify(spelling)}: ${String(cause)}`);
+                  }
+                }
+                for (const chord of chords) {
                   yield* Effect.promise(() =>
                     pressChord(chord, (key, down) =>
                       Effect.runPromise(deck.write({ t: "hid", key, down })),

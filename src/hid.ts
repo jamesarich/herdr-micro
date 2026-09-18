@@ -52,9 +52,28 @@ export interface Chord {
   readonly key: string;
 }
 
+// adafruit_hid spells digits as words, because `Keycode.1` is not a valid
+// identifier. ZERO sits at the end, matching the USB HID usage order.
+const DIGIT_WORDS = [
+  "ONE",
+  "TWO",
+  "THREE",
+  "FOUR",
+  "FIVE",
+  "SIX",
+  "SEVEN",
+  "EIGHT",
+  "NINE",
+  "ZERO",
+] as const;
+
 const keycodeFor = (token: string): string | undefined => {
   const lower = token.toLowerCase();
   if (KEY_ALIASES[lower]) return KEY_ALIASES[lower];
+  if (/^[0-9]$/.test(lower)) {
+    const digit = Number(lower);
+    return DIGIT_WORDS[digit === 0 ? 9 : digit - 1];
+  }
   if (/^[a-z]$/.test(lower)) return lower.toUpperCase();
   if (/^f([1-9]|1[0-9]|2[0-4])$/.test(lower)) return lower.toUpperCase();
   return undefined;

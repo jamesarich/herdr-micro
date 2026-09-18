@@ -49,3 +49,20 @@ describe("chord ordering", () => {
     expect(sent).toEqual(["+LEFT_CONTROL", "+B", "-B", "-LEFT_CONTROL"]);
   });
 });
+
+describe("digits", () => {
+  // adafruit_hid spells digit keycodes as words: Keycode.ONE, not Keycode.1,
+  // which is not even a valid identifier.
+  test("maps digits to their keycode words", () => {
+    expect(parseChord("1")).toEqual({ modifiers: [], key: "ONE" });
+    expect(parseChord("9")).toEqual({ modifiers: [], key: "NINE" });
+    expect(parseChord("0")).toEqual({ modifiers: [], key: "ZERO" });
+  });
+
+  test("handles the indexed-shortcut chords Herdr binds", () => {
+    expect(parseChord("ctrl+super+3")).toEqual({
+      modifiers: ["LEFT_CONTROL", "LEFT_GUI"],
+      key: "THREE",
+    });
+  });
+});
