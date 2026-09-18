@@ -285,14 +285,25 @@ const hostProgram = (config: Config) =>
       };
       const leaveEncoderMode = () => {
         clearEncoderModeTimer();
-        state.controls = reduceControlMessage(
+        const reduced = reduceControlMessage(
           state.controls,
           { t: "encoderTimeout" },
           state.fleet,
           config,
-        ).state;
+        );
+        state.controls = reduced.state;
         state.tabs = [];
         enqueueRender();
+        // Timing out of navigate mode has to dismiss the surface it opened on
+        // the host. Dropping these effects left the Deck believing the mode was
+        // over while a picker stayed open on screen, so the next turn of the
+        // encoder drove Herdr workspaces at a modal picker that ignored them.
+        const deck = state.active?.deck;
+        if (!deck || reduced.effects.length === 0) return;
+        for (const effect of reduced.effects) console.error(`  -> ${JSON.stringify(effect)}`);
+        Effect.runFork(
+          Effect.forEach(reduced.effects, (effect) => execute(effect, deck), { discard: true }),
+        );
       };
       const armEncoderModeTimer = () => {
         clearEncoderModeTimer();
@@ -559,7 +570,10 @@ const hostProgram = (config: Config) =>
           if (
             state.controls.encoderMode !== "workspaces" &&
             ((message.t === "encoder" && message.delta !== 0) ||
-              (message.t === "key" && message.k === 12 && message.down))
+              // Any key press, not just the encoder's: a Command Key can enter
+              // navigate mode, and that entry has to start the clock too or the
+              // mode outlives the surface it opened.
+              (message.t === "key" && message.down))
           ) {
             armEncoderModeTimer();
           } else if (previousMode !== "workspaces" && state.controls.encoderMode === "workspaces") {
