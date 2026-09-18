@@ -221,6 +221,15 @@ export function reduceControlMessage(
     case "sendKeys":
       return { state: nextState, effects: sendSelectedKeys(state, action.keys) };
     case "hidKeys":
+      // A navigate key toggles. Retyping the opening chord at a surface that is
+      // already listening dismisses it and leaks the rest of the sequence into
+      // the pane as literal characters, so the second press cancels instead.
+      if (action.navigate && state.encoderMode === "navigate") {
+        return {
+          state: { ...nextState, encoderMode: "workspaces", tabId: undefined },
+          effects: [{ type: "hidKeys", keys: ["esc"] }],
+        };
+      }
       return {
         state: action.navigate ? { ...nextState, encoderMode: "navigate" } : nextState,
         effects: [{ type: "hidKeys", keys: action.keys }],

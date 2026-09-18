@@ -480,3 +480,34 @@ describe("syncing the local view when the Target switches", () => {
     expect(effects).toEqual([{ type: "switchTarget", name: "macbook" }]);
   });
 });
+
+describe("the navigate key is a toggle", () => {
+  const navConfig: Config = {
+    ...DEFAULT_CONFIG,
+    commandKeys: {
+      ...DEFAULT_CONFIG.commandKeys,
+      "1": { type: "hidKeys", keys: ["ctrl+b", "w"], navigate: true, color: "#427b58" } as never,
+    },
+  };
+  const tapNavigateKey = (state: ControlState) =>
+    reduceControlMessage(state, { t: "key", k: 6, down: true }, [agent(1)], navConfig);
+
+  test("a second press dismisses the surface instead of retyping the opening chord", () => {
+    const opened = tapNavigateKey(initialControlState).state;
+    expect(opened.encoderMode).toBe("navigate");
+
+    // Retyping ctrl+b at an open picker dismisses it and leaks the `w` into
+    // the pane as a literal character, which is what pressing twice did.
+    const closed = tapNavigateKey(opened);
+    expect(closed.effects).toEqual([{ type: "hidKeys", keys: ["esc"] }]);
+    expect(closed.state.encoderMode).toBe("workspaces");
+  });
+
+  test("a third press opens it again", () => {
+    const opened = tapNavigateKey(initialControlState).state;
+    const closed = tapNavigateKey(opened).state;
+    const reopened = tapNavigateKey(closed);
+    expect(reopened.effects).toEqual([{ type: "hidKeys", keys: ["ctrl+b", "w"] }]);
+    expect(reopened.state.encoderMode).toBe("navigate");
+  });
+});
