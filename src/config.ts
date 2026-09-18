@@ -121,6 +121,15 @@ const ConfigSchema = Schema.Struct({
    * client sees. Bind Herdr's previous_workspace / next_workspace to direct
    * chords and name them here.
    */
+  /**
+   * Chords typed at the focused window to focus an agent slot, indexed from 1.
+   *
+   * `agent.focus` moves focus on the agent's own server, which is invisible
+   * unless the client is displaying that machine. Bind Herdr's
+   * `keys.indexed.agents` to a modifier combo and list the resulting chords
+   * here; they drive the client's agent panel, which spans machines.
+   */
+  agentChords: Schema.optional(Schema.NonEmptyArray(Schema.NonEmptyString)),
   workspaceChords: Schema.optional(
     Schema.Struct({
       previous: Schema.NonEmptyArray(Schema.NonEmptyString),
@@ -208,6 +217,7 @@ function mergeWithDefaults(user: typeof PartialConfigSchema.Type): Config {
     targets: user.targets ?? d.targets,
     syncLocalViewKeys: user.syncLocalViewKeys ?? d.syncLocalViewKeys,
     workspaceChords: user.workspaceChords ?? d.workspaceChords,
+    agentChords: user.agentChords ?? d.agentChords,
     defaultTarget: user.defaultTarget ?? d.defaultTarget,
     defaultAgentCommand: user.defaultAgentCommand ?? d.defaultAgentCommand,
     encoderTimeoutSeconds: user.encoderTimeoutSeconds ?? d.encoderTimeoutSeconds,

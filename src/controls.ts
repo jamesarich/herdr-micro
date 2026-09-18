@@ -95,6 +95,7 @@ export function reduceControlMessage(
     | "defaultTarget"
     | "syncLocalViewKeys"
     | "workspaceChords"
+    | "agentChords"
   >,
   activeTargetName = config.defaultTarget,
 ): { readonly state: ControlState; readonly effects: ReadonlyArray<ControlEffect> } {
@@ -176,6 +177,10 @@ export function reduceControlMessage(
     if (!message.down) return { state, effects: [] };
     const selected = page.slots[message.k];
     if (!selected) return { state, effects: [] };
+    // The panel index is absolute across pages, because it names a row in the
+    // client's own agent panel rather than a slot on this page.
+    const chord = config.agentChords?.[state.pageIndex * PAGE_SIZE + message.k];
+    if (chord) return { state, effects: [{ type: "hidKeys", keys: [chord] }] };
     return {
       state,
       effects: [{ type: "focusAgent", paneId: selected.paneId, machine: selected.machine }],

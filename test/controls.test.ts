@@ -571,3 +571,58 @@ describe("driving the local client's workspace list with chords", () => {
     expect(effects).toEqual([{ type: "selectTab", delta: 1 }]);
   });
 });
+
+describe("focusing an agent by chord", () => {
+  const chorded: Config = {
+    ...DEFAULT_CONFIG,
+    // Herdr's indexed shortcuts run 1-9, so a real config lists nine.
+    agentChords: Array.from({ length: 9 }, (_, i) => `ctrl+super+${i + 1}`) as [
+      string,
+      ...string[],
+    ],
+  };
+  const fleet = Array.from({ length: 8 }, (_, i) => agent(i));
+
+  test("a slot types its chord instead of focusing on the server", () => {
+    // agent.focus moves focus on the agent's own server, which is invisible
+    // unless the client happens to be displaying that machine. The chord drives
+    // the client's agent panel, which spans machines and moves the view.
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 2, down: true },
+      fleet,
+      chorded,
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["ctrl+super+3"] }]);
+  });
+
+  test("page two continues the numbering, since the panel index is absolute", () => {
+    const { effects } = reduceControlMessage(
+      { ...initialControlState, pageIndex: 1 },
+      { t: "key", k: 0, down: true },
+      fleet,
+      chorded,
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["ctrl+super+6"] }]);
+  });
+
+  test("falls back to the server call past the end of the configured chords", () => {
+    const { effects } = reduceControlMessage(
+      { ...initialControlState, pageIndex: 1 },
+      { t: "key", k: 2, down: true },
+      fleet,
+      { ...chorded, agentChords: ["ctrl+super+1"] },
+    );
+    expect(effects).toEqual([{ type: "focusAgent", paneId: "p7", machine: "local" }]);
+  });
+
+  test("still focuses on the server when no chords are configured", () => {
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 0, down: true },
+      fleet,
+      DEFAULT_CONFIG,
+    );
+    expect(effects).toEqual([{ type: "focusAgent", paneId: "p0", machine: "local" }]);
+  });
+});
