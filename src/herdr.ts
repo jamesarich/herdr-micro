@@ -335,6 +335,24 @@ const parseTabList = (input: unknown): ReadonlyArray<Tab> =>
     focused: value.focused ?? false,
   }));
 
+/**
+ * Push context onto a workspace so the Spaces sidebar can show it under a
+ * `$name` token. Namespaced by `source` and given a TTL, so it never becomes
+ * permanent state and a Host that dies stops asserting stale titles.
+ */
+export const reportWorkspaceContext = (
+  path: string,
+  workspaceId: string,
+  tokens: Readonly<Record<string, string>>,
+  ttlMs: number,
+): Effect.Effect<void, HerdrError> =>
+  sendRequest(path, "workspace.report_metadata", {
+    workspace_id: workspaceId,
+    source: "herdr-micro",
+    tokens,
+    ttl_ms: ttlMs,
+  }).pipe(Effect.asVoid);
+
 export const listWorkspaces = (path: string): Effect.Effect<ReadonlyArray<Workspace>, HerdrError> =>
   requestParsed(path, "workspace.list", parseWorkspaceList);
 

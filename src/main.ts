@@ -7,6 +7,7 @@ import { Command, Flag } from "effect/unstable/cli";
 
 import { version } from "../package.json";
 import { configFileExists, initializeConfig, loadConfig, type Config } from "./config.ts";
+import { workspaceContext } from "./context.ts";
 import {
   cycleNumbered,
   initialControlState,
@@ -23,6 +24,7 @@ import {
   readAgentVisible,
   retryForever,
   sendRequest,
+  reportWorkspaceContext,
   watchFleet,
   type FleetSnapshot,
 } from "./herdr.ts";
@@ -86,6 +88,10 @@ interface AppState extends TargetSessionState {
   targetError: boolean;
   connecting: boolean;
 }
+
+// Long enough to outlive a quiet fleet between events, short enough that a
+// Host that stops running stops asserting titles that may no longer be true.
+const CONTEXT_TTL_MS = 60 * 60 * 1000;
 
 const logFailure = (cause: { readonly message: string }) =>
   Effect.sync(() => console.error(cause.message));
@@ -311,6 +317,9 @@ const hostProgram = (config: Config) =>
       };
 
       let started = false;
+      // Last context reported per workspace, so an unchanged title is not
+      // rewritten on every snapshot; snapshots arrive on every agent event.
+      const reportedContext = new Map<string, string>();
       let switchFlashTimer: ReturnType<typeof setTimeout> | undefined;
       const onFleetSnapshot = (machine: string) => (snapshot: FleetSnapshot) => {
         if (switchFlashTimer) clearTimeout(switchFlashTimer);
@@ -322,6 +331,22 @@ const hostProgram = (config: Config) =>
         if (machine === state.activeTargetName) {
           state.connecting = false;
           state.targetError = false;
+        }
+        // Give this machine's own workspaces something to say in the Spaces
+        // sidebar, whose token set has no agent or title of its own.
+        if (config.reportWorkspaceContext) {
+          const socket = socketForMachine(machine);
+          for (const [workspaceId, tokens] of workspaceContext(snapshot.fleet)) {
+            const previous = reportedContext.get(workspaceId);
+            const encoded = `${tokens.agent}\u0000${tokens.title}`;
+            if (previous === encoded) continue;
+            reportedContext.set(workspaceId, encoded);
+            Effect.runFork(
+              reportWorkspaceContext(socket, workspaceId, tokens, CONTEXT_TTL_MS).pipe(
+                Effect.catch(logFailure),
+              ),
+            );
+          }
         }
         const previousPaneId = state.controls.selectedPaneId;
         const merged = mergeFleets(targetNames(config), state.fleetByMachine);

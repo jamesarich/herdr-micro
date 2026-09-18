@@ -130,6 +130,13 @@ const ConfigSchema = Schema.Struct({
    * here; they drive the client's agent panel, which spans machines.
    */
   agentChords: Schema.optional(Schema.NonEmptyArray(Schema.NonEmptyString)),
+  /**
+   * Push each workspace's agent title and kind onto Herdr as workspace
+   * metadata, for the Spaces sidebar to show under `$title` and `$agent`.
+   * Off by default: it writes into Herdr's state, namespaced and with a TTL,
+   * which is a thing to opt into rather than assume.
+   */
+  reportWorkspaceContext: Schema.optional(Schema.Boolean),
   workspaceChords: Schema.optional(
     Schema.Struct({
       previous: Schema.NonEmptyArray(Schema.NonEmptyString),
@@ -218,6 +225,7 @@ function mergeWithDefaults(user: typeof PartialConfigSchema.Type): Config {
     syncLocalViewKeys: user.syncLocalViewKeys ?? d.syncLocalViewKeys,
     workspaceChords: user.workspaceChords ?? d.workspaceChords,
     agentChords: user.agentChords ?? d.agentChords,
+    reportWorkspaceContext: user.reportWorkspaceContext ?? d.reportWorkspaceContext,
     defaultTarget: user.defaultTarget ?? d.defaultTarget,
     defaultAgentCommand: user.defaultAgentCommand ?? d.defaultAgentCommand,
     encoderTimeoutSeconds: user.encoderTimeoutSeconds ?? d.encoderTimeoutSeconds,
