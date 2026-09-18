@@ -44,6 +44,17 @@ const RegularCommandAction = Schema.Union([
     color: HexColor,
   }),
   Schema.Struct({
+    // Chords typed at the focused window over USB HID. Unlike sendKeys, which
+    // Herdr delivers into an agent's terminal, these reach the Herdr *client*,
+    // whose machine and workspace navigation is client-side UI state.
+    type: Schema.Literal("hidKeys"),
+    keys: Schema.NonEmptyArray(Schema.NonEmptyString),
+    // Arm the encoder to finish a navigation surface the chords just opened:
+    // rotate types up/down, press types enter, the idle timeout types esc.
+    navigate: Schema.optional(Schema.Boolean),
+    color: HexColor,
+  }),
+  Schema.Struct({
     // Herdr qualifies plugin actions globally as `plugin.id.action`, so one
     // id is enough to name any action the user has installed.
     type: Schema.Literal("pluginAction"),
@@ -93,6 +104,13 @@ const StateColorsSchema = Schema.Struct({
 });
 const ConfigSchema = Schema.Struct({
   targets: Schema.Record(Schema.NonEmptyString, TargetConfig),
+  /**
+   * Chords typed at the focused window whenever the Target switches, so the
+   * Herdr client's own view can follow the Deck. Off by default: HID goes to
+   * whatever currently has focus, which is the wrong window often enough that
+   * this has to be a deliberate choice.
+   */
+  syncLocalViewKeys: Schema.optional(Schema.NonEmptyArray(Schema.NonEmptyString)),
   defaultTarget: Schema.NonEmptyString,
   defaultAgentCommand: Schema.Array(Schema.String),
   encoderTimeoutSeconds: Schema.Finite.check(Schema.isGreaterThan(0)),
@@ -172,6 +190,7 @@ function mergeWithDefaults(user: typeof PartialConfigSchema.Type): Config {
   const d = DEFAULT_CONFIG;
   return {
     targets: user.targets ?? d.targets,
+    syncLocalViewKeys: user.syncLocalViewKeys ?? d.syncLocalViewKeys,
     defaultTarget: user.defaultTarget ?? d.defaultTarget,
     defaultAgentCommand: user.defaultAgentCommand ?? d.defaultAgentCommand,
     encoderTimeoutSeconds: user.encoderTimeoutSeconds ?? d.encoderTimeoutSeconds,

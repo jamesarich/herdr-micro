@@ -26,6 +26,7 @@ import {
   watchFleet,
   type FleetSnapshot,
 } from "./herdr.ts";
+import { parseChord, pressChord } from "./hid.ts";
 import { discoverMachines, mergeMachineTargets } from "./machines.ts";
 import {
   initialScreensaverState,
@@ -408,6 +409,19 @@ const hostProgram = (config: Config) =>
               );
             case "hid":
               return deck.write({ t: "hid", key: effect.key, down: effect.down });
+            case "hidKeys":
+              // Typed at whatever window has focus, which is how the Deck
+              // reaches the Herdr client rather than an agent's terminal.
+              return Effect.gen(function* () {
+                for (const spelling of effect.keys) {
+                  const chord = parseChord(spelling);
+                  yield* Effect.promise(() =>
+                    pressChord(chord, (key, down) =>
+                      Effect.runPromise(deck.write({ t: "hid", key, down })),
+                    ),
+                  );
+                }
+              });
             case "invokePluginAction":
               // Herdr resolves the globally qualified action id against the
               // plugins the user has installed, so the Deck does not need to

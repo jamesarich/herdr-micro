@@ -35,7 +35,7 @@ const stateLed = (config: Config, state: AgentState): DeviceLed => {
 const OFF = [0, 0, 0] as const;
 
 export interface EncoderModeRender {
-  readonly mode: "workspaces" | "tabs";
+  readonly mode: "workspaces" | "tabs" | "navigate";
   readonly tab?: { readonly label: string; readonly index: number; readonly count: number };
 }
 
@@ -155,11 +155,13 @@ export function buildRender(
   const context =
     options.targetPreviewName !== undefined
       ? `target: ${targetLabel}`
-      : encoder.mode === "tabs"
-        ? `${targetLabel} tabs ${encoder.tab ? `${encoder.tab.index + 1}/${encoder.tab.count} ${encoder.tab.label}` : ""}`
-        : [targetLabel, workspaceLabel ?? (selected?.cwd ? projectName(selected.cwd) : undefined)]
-            .filter(Boolean)
-            .join(" ");
+      : encoder.mode === "navigate"
+        ? "navigate: turn/press"
+        : encoder.mode === "tabs"
+          ? `${targetLabel} tabs ${encoder.tab ? `${encoder.tab.index + 1}/${encoder.tab.count} ${encoder.tab.label}` : ""}`
+          : [targetLabel, workspaceLabel ?? (selected?.cwd ? projectName(selected.cwd) : undefined)]
+              .filter(Boolean)
+              .join(" ");
   const duration =
     selected && options.selectedStateSince !== undefined
       ? formatDuration((options.now ?? Date.now()) - options.selectedStateSince)

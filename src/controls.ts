@@ -12,7 +12,7 @@ export interface ControlState {
    */
   readonly selectedMachine: string | undefined;
   readonly workspaceId: string | undefined;
-  readonly encoderMode: "workspaces" | "tabs";
+  readonly encoderMode: "workspaces" | "tabs" | "navigate";
   readonly tabId: string | undefined;
   readonly pressedCommandActions: Readonly<Partial<Record<keyof CommandKeys, CommandAction>>>;
   readonly targetPreviewName: string | undefined;
@@ -32,6 +32,7 @@ export type ControlEffect =
     }
   | { readonly type: "newAgent" }
   | { readonly type: "invokePluginAction"; readonly id: string }
+  | { readonly type: "hidKeys"; readonly keys: ReadonlyArray<string> }
   | { readonly type: "closeTab" }
   | { readonly type: "hid"; readonly key: string; readonly down: boolean }
   | { readonly type: "selectWorkspace"; readonly delta: number }
@@ -86,13 +87,18 @@ export function reduceControlMessage(
   state: ControlState,
   message: ControlMessage,
   fleet: ReadonlyArray<Agent>,
-  config: Pick<Config, "commandKeys" | "layerKeys" | "targets" | "defaultTarget">,
+  config: Pick<
+    Config,
+    "commandKeys" | "layerKeys" | "targets" | "defaultTarget" | "syncLocalViewKeys"
+  >,
   activeTargetName = config.defaultTarget,
 ): { readonly state: ControlState; readonly effects: ReadonlyArray<ControlEffect> } {
   if (message.t === "encoderTimeout") {
     return {
       state: { ...state, encoderMode: "workspaces", tabId: undefined },
-      effects: [],
+      // Leaving a picker open on screen would strand the user's terminal in a
+      // mode they did not choose, so time-out dismisses it.
+      effects: state.encoderMode === "navigate" ? [{ type: "hidKeys", keys: ["esc"] }] : [],
     };
   }
   if (message.t === "encoder") {
@@ -102,6 +108,15 @@ export function reduceControlMessage(
       const binding = message.delta > 0 ? ["ctrl+p"] : ["shift+ctrl+p"];
       const keys = Array.from({ length: Math.abs(message.delta) }, () => binding).flat();
       return { state, effects: sendSelectedKeys(state, keys) };
+    }
+    if (state.encoderMode === "navigate") {
+      const arrow = message.delta > 0 ? "down" : "up";
+      return {
+        state,
+        effects: [
+          { type: "hidKeys", keys: Array.from({ length: Math.abs(message.delta) }, () => arrow) },
+        ],
+      };
     }
     return {
       state,
@@ -122,6 +137,12 @@ export function reduceControlMessage(
       const currentName = state.targetPreviewName ?? activeTargetName;
       const index = (Math.max(0, targets.indexOf(currentName)) + 1) % targets.length;
       return { state: { ...state, targetPreviewName: targets[index] }, effects: [] };
+    }
+    if (state.encoderMode === "navigate") {
+      return {
+        state: { ...state, encoderMode: "workspaces", tabId: undefined },
+        effects: [{ type: "hidKeys", keys: ["enter"] }],
+      };
     }
     const nextMode = state.encoderMode === "workspaces" ? "tabs" : "workspaces";
     return {
@@ -170,7 +191,18 @@ export function reduceControlMessage(
   if (!message.down && action.type === "layer" && state.targetPreviewName) {
     const name = state.targetPreviewName;
     nextState = { ...nextState, targetPreviewName: undefined };
-    return { state: nextState, effects: [{ type: "switchTarget", name }] };
+    const sync = config.syncLocalViewKeys;
+    return {
+      state: nextState,
+      effects: sync
+        ? [
+            { type: "switchTarget", name },
+            // The Herdr client's machine view is its own UI state, so the only
+            // way to move it with the Deck is to type at it.
+            { type: "hidKeys", keys: sync },
+          ]
+        : [{ type: "switchTarget", name }],
+    };
   }
   if (action.type === "keyAlias") {
     return { state: nextState, effects: [{ type: "hid", key: action.key, down: message.down }] };
@@ -186,6 +218,11 @@ export function reduceControlMessage(
       return { state: nextState, effects: [{ type: "closeTab" }] };
     case "sendKeys":
       return { state: nextState, effects: sendSelectedKeys(state, action.keys) };
+    case "hidKeys":
+      return {
+        state: action.navigate ? { ...nextState, encoderMode: "navigate" } : nextState,
+        effects: [{ type: "hidKeys", keys: action.keys }],
+      };
     case "pluginAction":
       // A plugin action is a workflow on the server, not keystrokes for an
       // agent, so unlike sendKeys it needs no selection to be meaningful.

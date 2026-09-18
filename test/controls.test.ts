@@ -341,3 +341,130 @@ describe("plugin action Command Keys", () => {
     expect(effects).toEqual([{ type: "invokePluginAction", id: "tests.run" }]);
   });
 });
+
+describe("HID chord Command Keys", () => {
+  const withKey = (action: Record<string, unknown>): Config => ({
+    ...DEFAULT_CONFIG,
+    commandKeys: { ...DEFAULT_CONFIG.commandKeys, "1": action as never },
+  });
+
+  test("types the chords at the focused window, not into an agent", () => {
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 6, down: true },
+      [agent(1)],
+      withKey({ type: "hidKeys", keys: ["ctrl+b", "w"], color: "#00ffff" }),
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["ctrl+b", "w"] }]);
+  });
+
+  test("needs no selected agent, since it targets the window manager's focus", () => {
+    const { effects } = reduceControlMessage(
+      { ...initialControlState, selectedPaneId: undefined, selectedMachine: undefined },
+      { t: "key", k: 6, down: true },
+      [],
+      withKey({ type: "hidKeys", keys: ["ctrl+b"], color: "#00ffff" }),
+    );
+    expect(effects).toHaveLength(1);
+  });
+
+  test("optionally arms the encoder to finish the navigation", () => {
+    const { state, effects } = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 6, down: true },
+      [agent(1)],
+      withKey({ type: "hidKeys", keys: ["ctrl+b", "w"], navigate: true, color: "#00ffff" }),
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["ctrl+b", "w"] }]);
+    expect(state.encoderMode).toBe("navigate");
+  });
+});
+
+describe("encoder navigate mode", () => {
+  const navConfig: Config = {
+    ...DEFAULT_CONFIG,
+    commandKeys: {
+      ...DEFAULT_CONFIG.commandKeys,
+      "1": { type: "hidKeys", keys: ["ctrl+b", "w"], navigate: true, color: "#00ffff" } as never,
+    },
+  };
+  const armed = () =>
+    reduceControlMessage(initialControlState, { t: "key", k: 6, down: true }, [agent(1)], navConfig)
+      .state;
+
+  test("rotating types arrow keys at the picker instead of moving Herdr workspaces", () => {
+    const { effects } = reduceControlMessage(
+      armed(),
+      { t: "encoder", delta: 1 },
+      [agent(1)],
+      navConfig,
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["down"] }]);
+
+    const up = reduceControlMessage(armed(), { t: "encoder", delta: -1 }, [agent(1)], navConfig);
+    expect(up.effects).toEqual([{ type: "hidKeys", keys: ["up"] }]);
+  });
+
+  test("pressing confirms the picker and leaves navigate mode", () => {
+    const { state, effects } = reduceControlMessage(
+      armed(),
+      { t: "key", k: 12, down: true },
+      [agent(1)],
+      navConfig,
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["enter"] }]);
+    expect(state.encoderMode).toBe("workspaces");
+  });
+
+  test("the encoder timeout cancels the picker rather than leaving it open", () => {
+    const { state, effects } = reduceControlMessage(
+      armed(),
+      { t: "encoderTimeout" },
+      [agent(1)],
+      navConfig,
+    );
+    expect(effects).toEqual([{ type: "hidKeys", keys: ["esc"] }]);
+    expect(state.encoderMode).toBe("workspaces");
+  });
+});
+
+describe("syncing the local view when the Target switches", () => {
+  const syncing: Config = {
+    ...DEFAULT_CONFIG,
+    targets: { local: { socket: "/tmp/a.sock" }, macbook: { ssh: "mac" } },
+    syncLocalViewKeys: ["ctrl+b", "w"],
+  };
+
+  const previewThenRelease = (config: Config) => {
+    // Hold LAYER, press the encoder to preview, release LAYER to commit.
+    const held = reduceControlMessage(
+      initialControlState,
+      { t: "key", k: 8, down: true },
+      [agent(1)],
+      config,
+    ).state;
+    const previewed = reduceControlMessage(
+      held,
+      { t: "key", k: 12, down: true },
+      [agent(1)],
+      config,
+    ).state;
+    return reduceControlMessage(previewed, { t: "key", k: 8, down: false }, [agent(1)], config);
+  };
+
+  test("also opens the local picker so the view follows the Deck", () => {
+    const { effects } = previewThenRelease(syncing);
+    expect(effects).toEqual([
+      { type: "switchTarget", name: "macbook" },
+      { type: "hidKeys", keys: ["ctrl+b", "w"] },
+    ]);
+  });
+
+  test("sends nothing extra when the user has not opted in", () => {
+    const { effects } = previewThenRelease({
+      ...syncing,
+      syncLocalViewKeys: undefined,
+    });
+    expect(effects).toEqual([{ type: "switchTarget", name: "macbook" }]);
+  });
+});
