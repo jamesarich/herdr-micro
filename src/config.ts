@@ -111,6 +111,22 @@ const ConfigSchema = Schema.Struct({
    * this has to be a deliberate choice.
    */
   syncLocalViewKeys: Schema.optional(Schema.NonEmptyArray(Schema.NonEmptyString)),
+  /**
+   * Chords typed at the focused window when the encoder changes workspace,
+   * instead of moving the selected server's focus.
+   *
+   * The API route moves focus on whichever machine the Deck is aimed at, which
+   * is not necessarily the machine the user is looking at. The client's own
+   * workspace list spans every connected machine, so driving it needs input the
+   * client sees. Bind Herdr's previous_workspace / next_workspace to direct
+   * chords and name them here.
+   */
+  workspaceChords: Schema.optional(
+    Schema.Struct({
+      previous: Schema.NonEmptyArray(Schema.NonEmptyString),
+      next: Schema.NonEmptyArray(Schema.NonEmptyString),
+    }),
+  ),
   defaultTarget: Schema.NonEmptyString,
   defaultAgentCommand: Schema.Array(Schema.String),
   encoderTimeoutSeconds: Schema.Finite.check(Schema.isGreaterThan(0)),
@@ -191,6 +207,7 @@ function mergeWithDefaults(user: typeof PartialConfigSchema.Type): Config {
   return {
     targets: user.targets ?? d.targets,
     syncLocalViewKeys: user.syncLocalViewKeys ?? d.syncLocalViewKeys,
+    workspaceChords: user.workspaceChords ?? d.workspaceChords,
     defaultTarget: user.defaultTarget ?? d.defaultTarget,
     defaultAgentCommand: user.defaultAgentCommand ?? d.defaultAgentCommand,
     encoderTimeoutSeconds: user.encoderTimeoutSeconds ?? d.encoderTimeoutSeconds,

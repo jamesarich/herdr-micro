@@ -89,7 +89,12 @@ export function reduceControlMessage(
   fleet: ReadonlyArray<Agent>,
   config: Pick<
     Config,
-    "commandKeys" | "layerKeys" | "targets" | "defaultTarget" | "syncLocalViewKeys"
+    | "commandKeys"
+    | "layerKeys"
+    | "targets"
+    | "defaultTarget"
+    | "syncLocalViewKeys"
+    | "workspaceChords"
   >,
   activeTargetName = config.defaultTarget,
 ): { readonly state: ControlState; readonly effects: ReadonlyArray<ControlEffect> } {
@@ -115,6 +120,21 @@ export function reduceControlMessage(
         state,
         effects: [
           { type: "hidKeys", keys: Array.from({ length: Math.abs(message.delta) }, () => arrow) },
+        ],
+      };
+    }
+    const chords = config.workspaceChords;
+    if (chords && state.encoderMode !== "tabs") {
+      // One chord per detent: the client advances a single workspace per press,
+      // so a fast spin has to send as many as the knob reported.
+      const chord = message.delta > 0 ? chords.next : chords.previous;
+      return {
+        state,
+        effects: [
+          {
+            type: "hidKeys",
+            keys: Array.from({ length: Math.abs(message.delta) }, () => chord).flat(),
+          },
         ],
       };
     }

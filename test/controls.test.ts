@@ -511,3 +511,63 @@ describe("the navigate key is a toggle", () => {
     expect(reopened.state.encoderMode).toBe("navigate");
   });
 });
+
+describe("driving the local client's workspace list with chords", () => {
+  const chorded: Config = {
+    ...DEFAULT_CONFIG,
+    workspaceChords: { previous: ["ctrl+alt+k"], next: ["ctrl+alt+j"] },
+  };
+
+  test("rotating types the chords instead of moving the server's focus", () => {
+    // selectWorkspace moves focus on whichever machine the Deck is aimed at,
+    // which is not the machine the user is looking at. A chord goes to the
+    // client, whose workspace list spans every connected machine.
+    const forward = reduceControlMessage(
+      initialControlState,
+      { t: "encoder", delta: 1 },
+      [agent(1)],
+      chorded,
+    );
+    expect(forward.effects).toEqual([{ type: "hidKeys", keys: ["ctrl+alt+j"] }]);
+
+    const back = reduceControlMessage(
+      initialControlState,
+      { t: "encoder", delta: -1 },
+      [agent(1)],
+      chorded,
+    );
+    expect(back.effects).toEqual([{ type: "hidKeys", keys: ["ctrl+alt+k"] }]);
+  });
+
+  test("repeats the chord once per detent so a fast spin lands them all", () => {
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "encoder", delta: 3 },
+      [agent(1)],
+      chorded,
+    );
+    expect(effects).toEqual([
+      { type: "hidKeys", keys: ["ctrl+alt+j", "ctrl+alt+j", "ctrl+alt+j"] },
+    ]);
+  });
+
+  test("falls back to moving the server's focus when no chords are configured", () => {
+    const { effects } = reduceControlMessage(
+      initialControlState,
+      { t: "encoder", delta: 1 },
+      [agent(1)],
+      DEFAULT_CONFIG,
+    );
+    expect(effects).toEqual([{ type: "selectWorkspace", delta: -1 }]);
+  });
+
+  test("tabs mode is untouched: tabs are per-machine, so the API is right there", () => {
+    const { effects } = reduceControlMessage(
+      { ...initialControlState, encoderMode: "tabs" },
+      { t: "encoder", delta: 1 },
+      [agent(1)],
+      chorded,
+    );
+    expect(effects).toEqual([{ type: "selectTab", delta: 1 }]);
+  });
+});
