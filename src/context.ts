@@ -20,23 +20,37 @@ const ATTENTION: Record<AgentState, number> = {
   blocked: 4,
 };
 
+/**
+ * Drop one leading activity or spinner glyph and the whitespace after it,
+ * matching what Herdr's own `terminal_title_stripped` token does. Metadata
+ * gets no such treatment, and an animating spinner would make the row jitter.
+ *
+ * The test is "a leading symbol followed by space", which keeps titles that
+ * legitimately start with a digit or letter intact.
+ */
+const stripActivityGlyph = (title: string): string =>
+  title.replace(/^[^\p{L}\p{N}\s]\s+/u, "").trim();
+
 export function workspaceContext(
   fleet: ReadonlyArray<Agent>,
 ): ReadonlyMap<string, WorkspaceTokens> {
-  const chosen = new Map<string, Agent>();
+  const chosen = new Map<string, { agent: Agent; title: string }>();
   for (const agent of fleet) {
     // An agent with no title cannot describe the workspace, and reporting an
-    // empty token would blank the row rather than leaving it alone.
+    // empty token would blank the row rather than leaving it alone. A title
+    // that is only a spinner glyph reduces to nothing and counts as no title.
     if (!agent.title) continue;
+    const title = stripActivityGlyph(agent.title);
+    if (!title) continue;
     const previous = chosen.get(agent.workspaceId);
-    if (!previous || ATTENTION[agent.state] > ATTENTION[previous.state]) {
-      chosen.set(agent.workspaceId, agent);
+    if (!previous || ATTENTION[agent.state] > ATTENTION[previous.agent.state]) {
+      chosen.set(agent.workspaceId, { agent, title });
     }
   }
   return new Map(
-    [...chosen].map(([workspaceId, agent]) => [
+    [...chosen].map(([workspaceId, { agent, title }]) => [
       workspaceId,
-      { title: agent.title as string, agent: agent.name },
+      { title, agent: agent.name },
     ]),
   );
 }
