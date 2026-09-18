@@ -192,16 +192,18 @@ export function reduceControlMessage(
     const name = state.targetPreviewName;
     nextState = { ...nextState, targetPreviewName: undefined };
     const sync = config.syncLocalViewKeys;
+    if (!sync) return { state: nextState, effects: [{ type: "switchTarget", name }] };
     return {
-      state: nextState,
-      effects: sync
-        ? [
-            { type: "switchTarget", name },
-            // The Herdr client's machine view is its own UI state, so the only
-            // way to move it with the Deck is to type at it.
-            { type: "hidKeys", keys: sync },
-          ]
-        : [{ type: "switchTarget", name }],
+      // The chords open a picker on the local screen, so the encoder has to
+      // drive that picker rather than the machine we just switched to —
+      // otherwise the knob moves one machine while the user reads another.
+      state: { ...nextState, encoderMode: "navigate" },
+      effects: [
+        { type: "switchTarget", name },
+        // The Herdr client's machine view is its own UI state, so the only
+        // way to move it with the Deck is to type at it.
+        { type: "hidKeys", keys: sync },
+      ],
     };
   }
   if (action.type === "keyAlias") {

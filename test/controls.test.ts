@@ -460,6 +460,18 @@ describe("syncing the local view when the Target switches", () => {
     ]);
   });
 
+  test("arms the encoder so the picker it just opened can be walked", () => {
+    // Without this the encoder would still be driving the newly selected
+    // machine's workspaces while a picker sits open on the local screen.
+    const { state } = previewThenRelease(syncing);
+    expect(state.encoderMode).toBe("navigate");
+  });
+
+  test("leaves the encoder alone when the user has not opted in", () => {
+    const { state } = previewThenRelease({ ...syncing, syncLocalViewKeys: undefined });
+    expect(state.encoderMode).toBe("workspaces");
+  });
+
   test("sends nothing extra when the user has not opted in", () => {
     const { effects } = previewThenRelease({
       ...syncing,
